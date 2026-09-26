@@ -2,26 +2,32 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f4f3ef" id="themeColor">
-<meta name="description" content="QR-сканер с камерой или изображением. Чтение без регистрации, в ясном чёрно-белом интерфейсе.">
-<title>Точка | QR-сканер</title>
+<meta name="description" content="QR-сканер в браузере. Камера, фото или скриншот. Без установки и регистрации, изображение не покидает устройство.">
+<title>Точка · QR-сканер</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23101010'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23f4f3ef'/%3E%3C/svg%3E">
 <script>
 (()=>{let saved;try{saved=localStorage.getItem('qr-theme')}catch{}const theme=['dark','light'].includes(saved)?saved:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;const meta=document.getElementById('themeColor');if(meta)meta.content=theme==='dark'?'#101010':'#f4f3ef'})();
 </script>
-<link rel="stylesheet" href="./styles.css?v=5">
+<link rel="stylesheet" href="./styles.css?v=6">
 <script src="./app.js?v=5" defer></script>
 </head>
 <body>
+<div class="backdrop" aria-hidden="true"><span class="orb orb--a"></span><span class="orb orb--b"></span></div>
 <div class="page">
 <header class="site-header">
-<div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>Точка</span></div>
+<a class="brand" href="./" aria-label="Точка, на главную"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Точка</span></a>
 <button id="themeButton" class="theme-button" type="button">Сменить тему</button>
 </header>
 <main class="layout">
-<section class="scanner-pane">
+<section class="scanner-pane" aria-label="Сканер">
 <section class="card scanner-card" aria-label="Сканер QR-кодов">
+<div class="scanner-head">
+<p class="scanner-title">Сканер</p>
+<span class="state-chip" aria-hidden="true"></span>
+</div>
 <div class="preview-shell">
 <div class="preview" id="preview" aria-busy="false">
 <video id="video" autoplay muted playsinline hidden aria-label="Изображение с камеры"></video>
@@ -30,36 +36,41 @@
 <span class="vf-corner vf-corner--tr"></span>
 <span class="vf-corner vf-corner--bl"></span>
 <span class="vf-corner vf-corner--br"></span>
-<span class="vf-dot"></span>
+<span class="scan-line"></span>
 </div>
 <div class="placeholder" id="placeholder">
-<svg class="scan-symbol" viewBox="0 0 88 88" fill="none" aria-hidden="true"><rect x="10" y="10" width="68" height="68" rx="18" stroke="currentColor" stroke-width="2.5"/><path d="M27 10H18a8 8 0 0 0-8 8v9M61 10h9a8 8 0 0 1 8 8v9M78 61v9a8 8 0 0 1-8 8h-9M27 78h-9a8 8 0 0 1-8-8v-9" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><rect x="26" y="26" width="14" height="14" rx="3" stroke="currentColor" stroke-width="4"/><rect x="48" y="26" width="14" height="14" rx="3" stroke="currentColor" stroke-width="4"/><rect x="26" y="48" width="14" height="14" rx="3" stroke="currentColor" stroke-width="4"/><path d="M48 48h7v7h7v7H48V48Z" fill="currentColor"/><circle cx="44" cy="44" r="4" fill="currentColor"/></svg>
+<div class="ph-visual" aria-hidden="true">
+<svg class="scan-symbol" viewBox="0 0 88 88" fill="none"><rect x="26" y="26" width="14" height="14" rx="3" stroke="currentColor" stroke-width="4"/><rect x="48" y="26" width="14" height="14" rx="3" stroke="currentColor" stroke-width="4"/><rect x="26" y="48" width="14" height="14" rx="3" stroke="currentColor" stroke-width="4"/><path d="M48 48h7v7h7v7H48V48Z" fill="currentColor"/><path d="M27 10H18a8 8 0 0 0-8 8v9M61 10h9a8 8 0 0 1 8 8v9M78 61v9a8 8 0 0 1-8 8h-9M27 78h-9a8 8 0 0 1-8-8v-9" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>
+<span class="loader"></span>
+<svg class="done-mark" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle class="dm-circle" cx="32" cy="32" r="28"/><path class="dm-check" d="m21 33 7 7 15-16"/></svg>
+</div>
 <p id="placeholderText">Камера включится только с твоего разрешения</p>
 </div>
 <span id="cameraBadge" class="camera-badge" hidden>Ищем QR-код</span>
 </div>
-<p class="preview-caption">Наведи код в рамку или загрузи изображение.</p>
+<p class="preview-caption"><span class="only-touch">Держи код целиком в рамке, со светлым полем вокруг.</span><span class="only-pointer">Код целиком в рамке. Картинку можно перетащить в окно или вставить через Ctrl+V.</span></p>
 </div>
 <div id="cameraTools" class="camera-tools" hidden>
 <div id="cameraChoice">
 <label for="cameraSelect">Камера</label>
-<select id="cameraSelect"></select>
-<p class="hint">Если ракурс слишком широкий, выбери другую заднюю камеру. Выбор сохранится.</p>
+<span class="select-wrap"><select id="cameraSelect"></select></span>
+<p class="hint">Если картинка слишком широкая, выбери другую заднюю камеру. Выбор сохранится.</p>
 </div>
-<button id="torchButton" type="button" aria-pressed="false" hidden>Включить фонарик</button>
+<button id="torchButton" class="btn btn--ghost" type="button" aria-pressed="false" hidden>Включить фонарик</button>
 </div>
 <div class="actions">
-<button id="startButton" class="primary" type="button">Включить камеру</button>
-<button id="stopButton" type="button" hidden>Остановить</button>
-<button id="uploadButton" type="button">Загрузить фото</button>
+<button id="startButton" class="btn primary" type="button">Включить камеру</button>
+<button id="stopButton" class="btn btn--soft" type="button" hidden>Остановить</button>
+<button id="uploadButton" class="btn btn--ghost" type="button">Загрузить фото</button>
 </div>
 <input id="fileInput" type="file" accept="image/*,.heic,.heif" hidden>
 <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true">Фото и видео обрабатываются на твоём устройстве.</p>
 </section>
 <section id="result" class="card result" aria-labelledby="resultTitle" hidden>
 <div class="result-heading">
-<div>
-<p class="eyebrow eyebrow--tight">Результат</p>
+<span class="result-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 12.5 4 4 8-9"/></svg></span>
+<div class="result-titles">
+<p class="result-eyebrow">Результат</p>
 <h2 id="resultTitle">Готово</h2>
 </div>
 <span id="resultType" class="tag">Текст</span>
@@ -67,43 +78,71 @@
 <textarea id="resultText" readonly rows="4" spellcheck="false" aria-label="Содержимое QR-кода"></textarea>
 <p id="resultNote" class="result-note"></p>
 <div class="actions actions--result">
-<button id="copyButton" class="primary" type="button">Скопировать</button>
-<a id="openLink" class="button-link" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>Открыть ссылку</a>
+<button id="copyButton" class="btn primary" type="button">Скопировать</button>
+<a id="openLink" class="btn btn--ghost button-link" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>Открыть ссылку</a>
 </div>
 <p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p>
 </section>
 </section>
 <section class="hero-pane">
-<div class="intro">
-<p class="eyebrow">QR-сканер</p>
-<h1>Всё начинается с точки.</h1>
-<p class="lead">Камера или изображение. Результат можно скопировать, ссылку открыть после проверки.</p>
-</div>
-<ul class="status-strip" aria-label="Краткая информация">
-<li>Без регистрации</li>
-<li>Камера или фото</li>
-<li>Копирование в один шаг</li>
+<p class="eyebrow reveal" style="--d:.05s"><span class="live-dot" aria-hidden="true"></span>Работает прямо в браузере</p>
+<h1 class="headline"><span class="line"><span style="--d:.12s">Наведи камеру.</span></span><span class="line"><span class="soft" style="--d:.22s">Остальное сделает</span></span><span class="line"><span class="soft" style="--d:.32s">Точка.</span></span></h1>
+<p class="lead reveal" style="--d:.42s">Сканер QR-кодов без установки и регистрации. Камера, фото или скриншот. Изображение не покидает устройство.</p>
+<ul class="features">
+<li class="feature reveal" style="--d:.5s"><span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></span><div><p class="feature-title">Читает сложные коды</p><p>Несколько алгоритмов по очереди разбирают коды с логотипом, бликом или лёгким размытием.</p></div></li>
+<li class="feature reveal" style="--d:.58s"><span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span><div><p class="feature-title">Локально и приватно</p><p>Кадры и фото обрабатываются на устройстве. На сервер ничего не отправляется.</p></div></li>
+<li class="feature reveal" style="--d:.66s"><span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></span><div><p class="feature-title">Ссылки под контролем</p><p>Сначала видно адрес. Переход только по твоему решению.</p></div></li>
 </ul>
 <noscript><p class="noscript-note">Для распознавания QR-кодов нужно включить JavaScript в браузере.</p></noscript>
-<div class="editorial-note">
-<p class="note-title">Как это работает</p>
-<p>Сервис запрашивает доступ к камере только по действию и помогает читать коды с фото, экрана и бумаги в одном окне.</p>
-</div>
-<details class="help-details">
+<details class="help-details reveal" style="--d:.74s">
 <summary>Если код не читается</summary>
 <ul>
 <li>Покажи весь код со светлым полем вокруг него.</li>
 <li>Немного отодвинь телефон, чтобы камера навела резкость.</li>
-<li>При блике слегка измени угол. Фонарик на глянцевой поверхности может мешать.</li>
+<li>При блике слегка измени угол. Фонарик на глянце может мешать.</li>
 <li>Для кода на экране попробуй скриншот вместо фотографии.</li>
 </ul>
 </details>
 </section>
 </main>
-<footer>
-<p>Без регистрации и истории сканирований.</p>
-<span class="version">Версия 3.0</span>
+<footer class="site-footer">
+<p>Точка. QR-сканер без регистрации и истории.</p>
+<span class="version">Версия 3.1</span>
 </footer>
 </div>
+<div class="drop-zone" aria-hidden="true"><div class="drop-inner"><span class="drop-icon"></span><p>Отпусти, чтобы распознать</p></div></div>
+<script>
+(()=>{
+  const body = document.body;
+  const byId = id => document.getElementById(id);
+  let depth = 0;
+  const hasFiles = e => !!e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0;
+  const isImage = f => !!f && (/^image\//.test(f.type || '') || /\.(heic|heif)$/i.test(f.name || ''));
+  function feed(file) {
+    const input = byId('fileInput'), upload = byId('uploadButton');
+    if (!isImage(file) || !input || !upload || upload.disabled) return false;
+    try {
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      if (body.dataset.state === 'scanning') byId('stopButton').click();
+      input.files = transfer.files;
+      input.dispatchEvent(new Event('change', {bubbles: true}));
+      return true;
+    } catch { return false; }
+  }
+  addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); depth++; body.classList.add('is-dragging'); });
+  addEventListener('dragover', e => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  addEventListener('dragleave', e => { if (!hasFiles(e)) return; depth = Math.max(0, depth - 1); if (!depth) body.classList.remove('is-dragging'); });
+  addEventListener('drop', e => { if (!hasFiles(e)) return; e.preventDefault(); depth = 0; body.classList.remove('is-dragging'); feed(e.dataTransfer.files[0]); });
+  addEventListener('paste', e => {
+    const target = e.target;
+    if (target && (target.tagName === 'INPUT' || (target.tagName === 'TEXTAREA' && !target.readOnly))) return;
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (const item of items) {
+      if (item.kind === 'file' && feed(item.getAsFile())) { e.preventDefault(); break; }
+    }
+  });
+})();
+</script>
 </body>
 </html>
