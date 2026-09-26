@@ -4,47 +4,109 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f7f5fb" id="themeColor">
-<meta name="description" content="Простой QR-сканер. Камера или изображение, без регистрации.">
-<title>Точка — QR-сканер</title>
+<meta name="theme-color" content="#f4f3ef" id="themeColor">
+<meta name="description" content="QR-сканер с камерой или изображением. Чтение без регистрации, в ясном чёрно-белом интерфейсе.">
+<title>Точка | QR-сканер</title>
 <script>
-(()=>{let saved;try{saved=localStorage.getItem('qr-theme')}catch{}const theme=['dark','light'].includes(saved)?saved:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;document.getElementById('themeColor').content=theme==='dark'?'#17131f':'#f7f5fb'})();
+(()=>{let saved;try{saved=localStorage.getItem('qr-theme')}catch{}const theme=['dark','light'].includes(saved)?saved:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;const meta=document.getElementById('themeColor');if(meta)meta.content=theme==='dark'?'#101010':'#f4f3ef'})();
 </script>
-<link rel="stylesheet" href="./styles.css?v=4">
-<script src="./app.js?v=4" defer></script>
+<link rel="stylesheet" href="./styles.css?v=5">
+<script src="./app.js?v=5" defer></script>
+<script>
+(()=>{const apply=()=>{const meta=document.getElementById('themeColor');if(meta)meta.content=document.documentElement.dataset.theme==='dark'?'#101010':'#f4f3ef'};apply();new MutationObserver(apply).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']})})();
+</script>
 </head>
 <body>
 <div class="page">
-<header><div class="brand"><span class="brand-mark" aria-hidden="true"></span>Точка</div><button id="themeButton" class="theme-button" type="button">Сменить тему</button></header>
-<main>
-<div class="intro"><h1>Сканировать QR-код</h1><p>Наведи камеру или выбери изображение. Без регистрации и лишних действий.</p></div>
-<noscript><p>Для распознавания QR-кодов нужно включить JavaScript в браузере.</p></noscript>
-<section class="card" aria-label="Сканер QR-кодов">
+<header class="site-header">
+<div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>Точка</span></div>
+<button id="themeButton" class="theme-button" type="button">Сменить тему</button>
+</header>
+<main class="layout">
+<section class="scanner-pane">
+<section class="card scanner-card" aria-label="Сканер QR-кодов">
+<div class="preview-shell">
 <div class="preview" id="preview" aria-busy="false">
 <video id="video" autoplay muted playsinline hidden aria-label="Изображение с камеры"></video>
+<div class="viewfinder" aria-hidden="true">
+<span class="vf-corner vf-corner--tl"></span>
+<span class="vf-corner vf-corner--tr"></span>
+<span class="vf-corner vf-corner--bl"></span>
+<span class="vf-corner vf-corner--br"></span>
+<span class="vf-dot"></span>
+</div>
 <div class="placeholder" id="placeholder">
-<svg class="scan-symbol" viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d="M21 7H11a4 4 0 0 0-4 4v10 M43 7h10a4 4 0 0 1 4 4v10 M57 43v10a4 4 0 0 1-4 4H43 M21 57H11a4 4 0 0 1-4-4V43" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><rect x="18" y="18" width="10" height="10" rx="2" stroke="currentColor" stroke-width="3"/><rect x="36" y="18" width="10" height="10" rx="2" stroke="currentColor" stroke-width="3"/><rect x="18" y="36" width="10" height="10" rx="2" stroke="currentColor" stroke-width="3"/><path d="M36 36h5v5h5v5H36V36Z" fill="currentColor"/></svg>
+<svg class="scan-symbol" viewBox="0 0 88 88" fill="none" aria-hidden="true"><rect x="10" y="10" width="68" height="68" rx="18" stroke="currentColor" stroke-width="2.5"/><path d="M27 10H18a8 8 0 0 0-8 8v9M61 10h9a8 8 0 0 1 8 8v9M78 61v9a8 8 0 0 1-8 8h-9M27 78h-9a8 8 0 0 1-8-8v-9" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><rect x="26" y="26" width="14" height="14" rx="3" stroke="currentColor" stroke-width="4"/><rect x="48" y="26" width="14" height="14" rx="3" stroke="currentColor" stroke-width="4"/><rect x="26" y="48" width="14" height="14" rx="3" stroke="currentColor" stroke-width="4"/><path d="M48 48h7v7h7v7H48V48Z" fill="currentColor"/><circle cx="44" cy="44" r="4" fill="currentColor"/></svg>
 <p id="placeholderText">Камера включится только с твоего разрешения</p>
-</div><span id="cameraBadge" class="camera-badge" hidden>Ищем QR-код</span>
+</div>
+<span id="cameraBadge" class="camera-badge" hidden>Ищем QR-код</span>
+</div>
+<p class="preview-caption">Наведи код в рамку или загрузи изображение.</p>
 </div>
 <div id="cameraTools" class="camera-tools" hidden>
-<div id="cameraChoice"><label for="cameraSelect">Камера</label><select id="cameraSelect"></select><p class="hint">Слишком широкий вид? Выбери другую заднюю камеру. Выбор сохранится.</p></div>
+<div id="cameraChoice">
+<label for="cameraSelect">Камера</label>
+<select id="cameraSelect"></select>
+<p class="hint">Если ракурс слишком широкий, выбери другую заднюю камеру. Выбор сохранится.</p>
+</div>
 <button id="torchButton" type="button" aria-pressed="false" hidden>Включить фонарик</button>
 </div>
-<div class="actions"><button id="startButton" class="primary" type="button">Включить камеру</button><button id="stopButton" type="button" hidden>Остановить</button><button id="uploadButton" type="button">Загрузить фото</button></div>
+<div class="actions">
+<button id="startButton" class="primary" type="button">Включить камеру</button>
+<button id="stopButton" type="button" hidden>Остановить</button>
+<button id="uploadButton" type="button">Загрузить фото</button>
+</div>
 <input id="fileInput" type="file" accept="image/*,.heic,.heif" hidden>
 <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true">Фото и видео обрабатываются на твоём устройстве.</p>
 </section>
 <section id="result" class="card result" aria-labelledby="resultTitle" hidden>
-<div class="result-heading"><h2 id="resultTitle">Готово</h2><span id="resultType" class="tag">Текст</span></div>
+<div class="result-heading">
+<div>
+<p class="eyebrow eyebrow--tight">Результат</p>
+<h2 id="resultTitle">Готово</h2>
+</div>
+<span id="resultType" class="tag">Текст</span>
+</div>
 <textarea id="resultText" readonly rows="4" spellcheck="false" aria-label="Содержимое QR-кода"></textarea>
 <p id="resultNote" class="result-note"></p>
-<div class="actions"><button id="copyButton" class="primary" type="button">Скопировать</button><a id="openLink" class="button-link" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>Открыть ссылку</a></div>
+<div class="actions actions--result">
+<button id="copyButton" class="primary" type="button">Скопировать</button>
+<a id="openLink" class="button-link" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>Открыть ссылку</a>
+</div>
 <p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p>
 </section>
-<details><summary>Если код не читается</summary><ul><li>Покажи весь код со светлым полем вокруг него.</li><li>Немного отодвинь телефон, чтобы камера навела резкость.</li><li>При блике слегка измени угол. Фонарик на глянцевой поверхности может мешать.</li><li>Для кода на экране попробуй скриншот вместо фотографии.</li></ul></details>
+</section>
+<section class="hero-pane">
+<div class="intro">
+<p class="eyebrow">QR-сканер</p>
+<h1>Всё начинается с точки.</h1>
+<p class="lead">Наведи камеру на QR-код или выбери изображение. Интерфейс короткий, чтение локальное, результат сразу перед глазами.</p>
+</div>
+<ul class="status-strip" aria-label="Краткая информация">
+<li>Без регистрации</li>
+<li>Камера или фото</li>
+<li>Копирование в один шаг</li>
+</ul>
+<noscript><p class="noscript-note">Для распознавания QR-кодов нужно включить JavaScript в браузере.</p></noscript>
+<div class="editorial-note">
+<p class="note-title">Как это работает</p>
+<p>Сервис запрашивает доступ к камере только по действию и помогает читать коды с фото, экрана и бумаги в одном окне.</p>
+</div>
+<details class="help-details">
+<summary>Если код не читается</summary>
+<ul>
+<li>Покажи весь код со светлым полем вокруг него.</li>
+<li>Немного отодвинь телефон, чтобы камера навела резкость.</li>
+<li>При блике слегка измени угол. Фонарик на глянцевой поверхности может мешать.</li>
+<li>Для кода на экране попробуй скриншот вместо фотографии.</li>
+</ul>
+</details>
+</section>
 </main>
-<footer><p>Без регистрации и истории сканирований.</p><span class="version">Версия 2.0</span></footer>
+<footer>
+<p>Без регистрации и истории сканирований.</p>
+<span class="version">Версия 3.0</span>
+</footer>
 </div>
 </body>
 </html>
