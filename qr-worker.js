@@ -1,9 +1,9 @@
 'use strict';
 
-const search = new URL(self.location.href).searchParams;
-const nativeTestMode = search.get('native') || '';
-const forceEmptyZXing = search.get('zxing') === 'empty';
-const nativeTimeoutMs = readPositiveNumber('nativeTimeoutMs', 180);
+const NATIVE_SETUP_TIMEOUT_MS = 1000;
+const NATIVE_CAMERA_TIMEOUT_MS = 90;
+const NATIVE_PHOTO_TIMEOUT_MS = 180;
+const CAMERA_EXTRA_PASS_BUDGET_MS = 120;
 
 let ready = false;
 let busy = false;
@@ -13,8 +13,6 @@ const nativeState = {
   enabled: false,
   disabledReason: ''
 };
-
-installNativeTestMode();
 
 async function initialize() {
   try {
@@ -41,14 +39,9 @@ async function initialize() {
   }
 }
 
-function readPositiveNumber(name, fallback) {
-  const value = Number(search.get(name));
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
 function now() {
-  return typeof performance !== 'undefined' && typeof performance.now ===
-    'function' ? performance.now() : Date.now();
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ?
+    performance.now() : Date.now();
 }
 
 function roundMs(value) {
@@ -71,24 +64,6 @@ function withTimeout(promise, timeoutMs, message) {
   });
 }
 
-function installNativeTestMode() {
-  if (nativeTestMode === 'off') {
-    try { self.BarcodeDetector = undefined; } catch {}
-    return;
-  }
-  if (nativeTestMode === 'error' || nativeTestMode === 'hang') {
-    self.BarcodeDetector = class TestBarcodeDetector {
-      static async getSupportedFormats() {
-        return ['qr_code'];
-      }
-      async detect() {
-        if (nativeTestMode === 'error') throw Error('Native detector test failure');
-        return new Promise(() => {});
-      }
-    };
-  }
-}
-
 function disableNative(error) {
   nativeState.detector = null;
   nativeState.enabled = false;
@@ -96,13 +71,12 @@ function disableNative(error) {
 }
 
 async function prepareNativeDetector() {
-  if (nativeTestMode === 'off') return;
   if (typeof self.BarcodeDetector !== 'function') return;
   if (typeof self.BarcodeDetector.getSupportedFormats !== 'function') return;
   try {
     const formats = await withTimeout(
       Promise.resolve(self.BarcodeDetector.getSupportedFormats()),
-      1000,
+      NATIVE_SETUP_TIMEOUT_MS,
       'Native detector setup timeout'
     );
     if (!Array.isArray(formats) || !formats.includes('qr_code')) return;
@@ -116,7 +90,6 @@ async function prepareNativeDetector() {
 async function readWithZXing(image, options, timing) {
   const started = now();
   try {
-    if (forceEmptyZXing) return null;
     const results = await ZXingWASM.readBarcodes(image, {
       formats: ['QRCode'],
       maxNumberOfSymbols: 1,
@@ -136,18 +109,17 @@ async function readWithZXing(image, options, timing) {
   }
 }
 
-async function readWithNative(image, timing) {
+async function readWithNative(image, timing, timeoutMs) {
   if (!nativeState.enabled || !nativeState.detector) return null;
   const started = now();
   try {
     const results = await withTimeout(
       nativeState.detector.detect(image),
-      nativeTimeoutMs,
+      timeoutMs,
       'Native detector timeout'
     );
     const found = Array.isArray(results) ?
-      results.find(item => typeof item.rawValue === 'string') :
-      null;
+      results.find(item => typeof item.rawValue === 'string') : null;
     return found ? found.rawValue : null;
   } catch (error) {
     disableNative(error);
@@ -255,35 +227,54 @@ function enhance(image, sharpen) {
   return new ImageData(output, width, height);
 }
 
+function normalizeAttempt(attempt) {
+  return Math.abs(Number(attempt) || 0);
+}
+
+function shouldRunCameraExtraPass(attempt, zxingDuration) {
+  return zxingDuration <= CAMERA_EXTRA_PASS_BUDGET_MS || attempt % 4 === 3;
+}
+
 async function decodeCamera(image, attempt, timing) {
-  let text = await readWithZXing(image, {global: false}, timing);
+  const normalizedAttempt = normalizeAttempt(attempt);
+  const nativeFirst = normalizedAttempt % 2 === 0;
+  let text = null;
+  if (nativeFirst) {
+    text = await readWithNative(image, timing, NATIVE_CAMERA_TIMEOUT_MS);
+    if (text !== null) return {text, engine: 'native'};
+  }
+  const zxingBefore = timing.zxingMs || 0;
+  text = await readWithZXing(image, {global: false}, timing);
+  const zxingDuration = roundMs((timing.zxingMs || 0) - zxingBefore);
   if (text !== null) return {text, engine: 'zxing'};
-  const cycle = Math.abs(Number(attempt) || 0) % 6;
-  if (cycle === 0 || cycle === 3) {
-    text = await readWithNative(image, timing);
-    return text !== null ? {text, engine: 'native'} : {text: null, engine: null};
+  if (!nativeFirst) {
+    text = await readWithNative(image, timing, NATIVE_CAMERA_TIMEOUT_MS);
+    if (text !== null) return {text, engine: 'native'};
   }
-  if (cycle === 1) {
-    text = readWithJsQR(image, 'dontInvert', timing);
-    return text !== null ? {text, engine: 'jsqr'} : {text: null, engine: null};
+  if (!shouldRunCameraExtraPass(normalizedAttempt, zxingDuration)) {
+    return {text: null, engine: null};
   }
-  if (cycle === 2) {
-    text = await readWithZXing(enhance(image, true), {global: false}, timing);
-    return text !== null ? {text, engine: 'zxing'} : {text: null, engine: null};
+  switch (normalizedAttempt % 4) {
+    case 0:
+      text = readWithJsQR(image, 'dontInvert', timing);
+      return text !== null ? {text, engine: 'jsqr'} : {text: null, engine: null};
+    case 1:
+      text = await readWithZXing(enhance(image, true), {global: false}, timing);
+      return text !== null ? {text, engine: 'zxing'} : {text: null, engine: null};
+    case 2:
+      text = readWithJsQR(enhance(image, false), 'invertFirst', timing);
+      return text !== null ? {text, engine: 'jsqr'} : {text: null, engine: null};
+    default:
+      text = await readWithZXing(enhance(image, true), {global: true}, timing);
+      return text !== null ? {text, engine: 'zxing'} : {text: null, engine: null};
   }
-  if (cycle === 4) {
-    text = readWithJsQR(enhance(image, false), 'invertFirst', timing);
-    return text !== null ? {text, engine: 'jsqr'} : {text: null, engine: null};
-  }
-  text = await readWithZXing(enhance(image, true), {global: true}, timing);
-  return text !== null ? {text, engine: 'zxing'} : {text: null, engine: null};
 }
 
 async function decodePhoto(image, timing) {
-  let text = await readWithZXing(image, {global: false}, timing);
-  if (text !== null) return {text, engine: 'zxing'};
-  text = await readWithNative(image, timing);
+  let text = await readWithNative(image, timing, NATIVE_PHOTO_TIMEOUT_MS);
   if (text !== null) return {text, engine: 'native'};
+  text = await readWithZXing(image, {global: false}, timing);
+  if (text !== null) return {text, engine: 'zxing'};
   text = readWithJsQR(image, 'attemptBoth', timing);
   if (text !== null) return {text, engine: 'jsqr'};
   const sharpened = enhance(image, true);

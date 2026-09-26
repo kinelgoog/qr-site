@@ -91,7 +91,56 @@ async function upload(page, buffer) {
   });
 }
 
-async function workerSequence(page, items, query) {
+function insertAfter(source, needle, addition) {
+  const index = source.indexOf(needle);
+  if (index < 0) throw new Error(`Missing worker marker: ${needle}`);
+  return source.slice(0, index + needle.length) + addition + source.slice(index + needle.length);
+}
+
+function replaceOnce(source, from, to) {
+  if (!source.includes(from)) throw new Error(`Missing worker fragment: ${from}`);
+  return source.replace(from, to);
+}
+
+function mutateWorkerSource(source, scenario) {
+  if (!scenario) return source;
+  let next = source;
+  if (scenario.preamble) {
+    next = insertAfter(next, `'use strict';`, `\n${scenario.preamble}\n`);
+  }
+  if (scenario.afterPrepare) {
+    next = insertAfter(next, 'await prepareNativeDetector();', `\n${scenario.afterPrepare}\n`);
+  }
+  if (scenario.replacements) {
+    for (const replacement of scenario.replacements) {
+      next = replaceOnce(next, replacement.from, replacement.to);
+    }
+  }
+  return next;
+}
+
+async function installWorkerRoute(page, scenarios) {
+  const handler = async route => {
+    const url = new URL(route.request().url());
+    const response = await route.fetch();
+    const source = await response.text();
+    const scenario = scenarios[url.searchParams.get('scenario')] || null;
+    await route.fulfill({
+      response,
+      body: mutateWorkerSource(source, scenario),
+      headers: {
+        ...response.headers(),
+        'content-type': 'application/javascript; charset=utf-8'
+      }
+    });
+  };
+  await page.route('**/qr-worker.js*', handler);
+  return async () => {
+    await page.unroute('**/qr-worker.js*', handler);
+  };
+}
+
+async function workerSequence(page, items, scenario = 'base') {
   const encoded = [];
   for (const item of items) {
     encoded.push({
@@ -100,7 +149,7 @@ async function workerSequence(page, items, query) {
       base64: (await qrImage(page, item.text || payload, item.variant || 'plain')).toString('base64')
     });
   }
-  return page.evaluate(async ({items, query}) => {
+  return page.evaluate(async ({items, scenario}) => {
     function decodeBase64(base64) {
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
@@ -116,7 +165,7 @@ async function workerSequence(page, items, query) {
       bitmap.close?.();
       return ctx.getImageData(0, 0, canvas.width, canvas.height);
     }
-    const worker = new Worker(`/qr-worker.js${query}`);
+    const worker = new Worker(`/qr-worker.js?scenario=${encodeURIComponent(scenario)}`);
     const pending = new Map();
     let readyResolve;
     let readyReject;
@@ -169,8 +218,76 @@ async function workerSequence(page, items, query) {
     }
     worker.terminate();
     return results;
-  }, {items: encoded, query});
+  }, {items: encoded, scenario});
 }
+
+const workerScenarios = {
+  'no-native': {
+    preamble: `
+self.BarcodeDetector = class NoNativeBarcodeDetector {
+  static async getSupportedFormats() {
+    return [];
+  }
+};`.trim()
+  },
+  'native-error': {
+    preamble: `
+self.BarcodeDetector = class TestBarcodeDetector {
+  static async getSupportedFormats() {
+    return ['qr_code'];
+  }
+  async detect() {
+    throw Error('Native detector test failure');
+  }
+};`.trim()
+  },
+  'native-hang': {
+    preamble: `
+self.BarcodeDetector = class TestBarcodeDetector {
+  static async getSupportedFormats() {
+    return ['qr_code'];
+  }
+  async detect() {
+    return new Promise(() => {});
+  }
+};`.trim()
+  },
+  'zxing-empty': {
+    preamble: `
+self.BarcodeDetector = class NoNativeBarcodeDetector {
+  static async getSupportedFormats() {
+    return [];
+  }
+};`.trim(),
+    afterPrepare: `
+ZXingWASM.readBarcodes = ((original) => async (...args) => {
+  await original(...args);
+  return [];
+})(ZXingWASM.readBarcodes);`.trim()
+  },
+  'slow-zxing-no-extra': {
+    preamble: `
+self.BarcodeDetector = class NoNativeBarcodeDetector {
+  static async getSupportedFormats() {
+    return [];
+  }
+};`.trim(),
+    afterPrepare: `
+ZXingWASM.readBarcodes = ((original) => async (...args) => {
+  await new Promise(resolve => setTimeout(resolve, 140));
+  await original(...args);
+  return [];
+})(ZXingWASM.readBarcodes);`.trim(),
+    replacements: [{
+      from: 'function readWithJsQR(image, inversionAttempts, timing) {',
+      to: 'function readWithJsQR(image, inversionAttempts, timing) {\n  throw Error(\'Unexpected jsQR fallback\');'
+    }]
+  }
+};
+
+test.beforeEach(async ({page}) => {
+  await installWorkerRoute(page, workerScenarios);
+});
 
 for (const {title, variant} of uiVariants) {
   test(`decodes ${title} image locally`, async ({page}) => {
@@ -195,7 +312,7 @@ for (const {title, variant} of uiVariants) {
 test('worker preserves decode protocol and returns timing metadata', async ({page, browserName}) => {
   test.skip(browserName !== 'chromium', 'Worker metadata checks are validated in Chromium');
   await page.goto('/');
-  const [result] = await workerSequence(page, [{variant: 'plain'}], '?v=4&native=off');
+  const [result] = await workerSequence(page, [{variant: 'plain'}], 'no-native');
   expect(result.type).toBe('result');
   expect(result.id).toBe(1);
   expect(result.text).toBe(payload);
@@ -212,8 +329,8 @@ test('worker falls back after native error and disables native for later decodes
   await page.goto('/');
   const results = await workerSequence(page, [
     {variant: 'plain', attempt: 0, mode: 'camera'},
-    {variant: 'plain', attempt: 3, mode: 'camera'}
-  ], '?v=4&native=error');
+    {variant: 'plain', attempt: 2, mode: 'camera'}
+  ], 'native-error');
   expect(results[0].text).toBe(payload);
   expect(results[0].engine).toBe('zxing');
   expect('nativeMs' in results[0].timing).toBe(true);
@@ -227,11 +344,11 @@ test('worker falls back after native hang and disables native for later decodes'
   await page.goto('/');
   const results = await workerSequence(page, [
     {variant: 'plain', attempt: 0, mode: 'camera'},
-    {variant: 'plain', attempt: 3, mode: 'camera'}
-  ], '?v=4&native=hang&nativeTimeoutMs=40');
+    {variant: 'plain', attempt: 2, mode: 'camera'}
+  ], 'native-hang');
   expect(results[0].text).toBe(payload);
   expect(results[0].engine).toBe('zxing');
-  expect(results[0].timing.nativeMs).toBeGreaterThanOrEqual(35);
+  expect(results[0].timing.nativeMs).toBeGreaterThanOrEqual(80);
   expect(results[1].text).toBe(payload);
   expect(results[1].engine).toBe('zxing');
   expect(results[1].timing.nativeMs ?? 0).toBe(0);
@@ -240,12 +357,22 @@ test('worker falls back after native hang and disables native for later decodes'
 test('worker uses jsQR fallback when ZXing has no result', async ({page, browserName}) => {
   test.skip(browserName !== 'chromium', 'jsQR fallback checks are validated in Chromium');
   await page.goto('/');
-  const [result] = await workerSequence(page, [{variant: 'plain'}], '?v=4&native=off&zxing=empty');
+  const [result] = await workerSequence(page, [{variant: 'plain'}], 'zxing-empty');
   expect(result.text).toBe(payload);
   expect(result.error).toBeFalsy();
   expect(result.engine).toBe('jsqr');
   expect(typeof result.timing.jsqrMs).toBe('number');
   expect(result.timing.jsqrMs).toBeGreaterThan(0);
+});
+
+test('worker skips extra camera pass after slow ZXing on most frames', async ({page, browserName}) => {
+  test.skip(browserName !== 'chromium', 'Camera budget checks are validated in Chromium');
+  await page.goto('/');
+  const [result] = await workerSequence(page, [{variant: 'plain', attempt: 0, mode: 'camera'}], 'slow-zxing-no-extra');
+  expect(result.error).toBeFalsy();
+  expect(result.text).toBeNull();
+  expect(result.engine).toBeUndefined();
+  expect(result.timing.zxingMs).toBeGreaterThanOrEqual(135);
 });
 
 test('unsafe content stays text; repeated upload works', async ({page}) => {
